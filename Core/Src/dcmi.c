@@ -52,21 +52,14 @@
 
 /* USER CODE BEGIN 0 */
 #include "mt9v034.h"
-uint8_t dcmi_image_buffer_8bit_1[FULL_IMAGE_SIZE];
+uint8_t dcmi_image_buffer_8bit_1[FULL_IMAGE_SIZE] = {0};
+uint8_t dcmi_image_buffer_8bit_2[FULL_IMAGE_SIZE] = {0};
 /**
  * @brief Enable DCMI DMA stream
  */
 void dcmi_dma_enable()
 {
-  #if 0
-  dma_it_init();
-  /* Enable DMA2 stream 1 and DCMI interface then start image capture */
-  DMA_Cmd(DMA2_Stream1, ENABLE);
-  DCMI_Cmd(ENABLE);
-  DCMI_CaptureCmd(ENABLE);
-  #else
   HAL_DCMI_Start_DMA(&hdcmi, DCMI_MODE_CONTINUOUS, (uint32_t)dcmi_image_buffer_8bit_1, FULL_IMAGE_SIZE / 4);
-  #endif
 }
 /**
   * @brief  VSYNC Event callback.
@@ -78,8 +71,8 @@ void HAL_DCMI_VsyncEventCallback(DCMI_HandleTypeDef *hdcmi)
 {
   if (hdcmi->Instance == DCMI)
   {
+    //代表收到一帧
     HAL_GPIO_TogglePin(GPIOE, LED_ACT_Pin);
-    HAL_DCMI_Start_DMA(hdcmi, DCMI_MODE_CONTINUOUS, (uint32_t)dcmi_image_buffer_8bit_1, FULL_IMAGE_SIZE / 4);
   }
 }
 /* USER CODE END 0 */
@@ -172,7 +165,7 @@ void HAL_DCMI_MspInit(DCMI_HandleTypeDef* dcmiHandle)
     hdma_dcmi.Init.MemInc = DMA_MINC_ENABLE;
     hdma_dcmi.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
     hdma_dcmi.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
-    hdma_dcmi.Init.Mode = DMA_NORMAL;
+    hdma_dcmi.Init.Mode = DMA_CIRCULAR;
     hdma_dcmi.Init.Priority = DMA_PRIORITY_LOW;
     hdma_dcmi.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
     if (HAL_DMA_Init(&hdma_dcmi) != HAL_OK)

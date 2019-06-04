@@ -34,15 +34,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  *
  ****************************************************************************/
-/*
-#include "no_warnings.h"
-#include "stm32f4xx_dcmi.h"
-#include "stm32f4xx_dma.h"
-#include "stm32f4xx_rcc.h"
-#include "stm32f4xx_i2c.h"
-
-#include "led.h"
-*/
 #include <string.h>
 #include "mt9v034.h"
 //#include "i2c_gpio.h"
@@ -264,27 +255,23 @@ static int mt9v034_write_table(		const struct mt9v034_reg table[])
 
 	return err;
 }
+extern uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 int mt9v034_start_stream(void)
 {
-	#if 0
-	mt9v034_ReadReg16(MTV_CHIP_VERSION_REG);
-	return 0;
-#else
 	uint16_t chip_version = 0;
 	int retry_num = 1, err = 0;
 
 	/* MT9V034 Soft Reset */
 	/* Reset */
-	//mt9v034_WriteReg16(MTV_SOFT_RESET_REG, 0x01);
-	//msleep(1);
+	mt9v034_WriteReg16(MTV_SOFT_RESET_REG, 0x01);
+	msleep(1);
 
 	while (!chip_version && retry_num-- > 0)
 		chip_version = mt9v034_ReadReg16(MTV_CHIP_VERSION_REG);
 
 	if (chip_version != 0x1324) {
-		CDC_Transmit_FS("read err\n", strlen("read err\n"));
-		 // HAL_UART_Transmit(&huart2, "[mt9v034]: failed to read sensor id\n", strlen("[mt9v034]: failed to read sensor id\n"), 1000);
-		return -1;
+		CDC_Transmit_FS((uint8_t*)"read err\n", strlen("read err\n"));
+		while(1);
 	}
 	CDC_Transmit_FS("[mt9v034]: ok\n", strlen("[mt9v034]: ok\n"));
 
@@ -295,7 +282,6 @@ int mt9v034_start_stream(void)
 	/* Reset */
 		mt9v034_WriteReg16(MTV_SOFT_RESET_REG, 0x01);
 	return err;
-	#endif
 }
 #if 0
 /**
@@ -520,39 +506,18 @@ void mt9v034_set_context()
 /**
   * @brief  Reads from a specific Camera register
   */
-#if 0
-uint16_t mt9v034_ReadReg16(uint8_t address)
-{
-//	uint16_t result = mt9v034_ReadReg(address) << 8; // read upper byte
-//	result |= mt9v034_ReadReg(0xF0); // read lower byte
-	return 0;
-}
-#else
 static uint16_t mt9v034_ReadReg16(uint8_t address)
 {
 	uint8_t tmp[2];
 	HAL_StatusTypeDef ret;
-	#if 1
 	ret = HAL_I2C_Mem_Read(&hi2c2, mt9v034_DEVICE_WRITE_ADDRESS, address, I2C_MEMADD_SIZE_8BIT, tmp, 2, 1000);
-	#else
-	i2c_master_read_mem(0x90, address, tmp, 2);
-	#endif
 	
 	return tmp[0] << 8 | tmp[1];
 }
-#endif
 
 /**
   * @brief  Writes to a specific Camera register
   */
-#if 0
-uint8_t mt9v034_WriteReg16(uint16_t address, uint16_t Data)
-{
-	uint8_t result = mt9v034_WriteReg(address, (uint8_t)( Data >> 8)); // write upper byte
-	result |= mt9v034_WriteReg(0xF0, (uint8_t) Data); // write lower byte
-	return result;
-}
-#else
 static uint8_t mt9v034_WriteReg16(uint16_t address, uint16_t Data)
 {
 	uint8_t tmp[4];
@@ -563,157 +528,4 @@ static uint8_t mt9v034_WriteReg16(uint16_t address, uint16_t Data)
 	ret = HAL_I2C_Master_Transmit(&hi2c2, mt9v034_DEVICE_WRITE_ADDRESS, tmp, 3, 100);
 	return ret;
 }
-#endif
-#if 0
-/**
-  * @brief  Writes a byte at a specific Camera register
-  * @param  Addr: mt9v034 register address.
-  * @param  Data: Data to be written to the specific register
-  * @retval 0x00 if write operation is OK.
-  *       0xFF if timeout condition occured (device not connected or bus error).
-  */
-uint8_t mt9v034_WriteReg(uint16_t Addr, uint8_t Data)
-{
-  uint32_t timeout = TIMEOUT_MAX;
 
-  /* Generate the Start Condition */
-  I2C_GENERATE_START(I2C3, ENABLE);
-
-  /* Test on I2C2 EV5 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_MODE_SELECT))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Send DCMI selcted device slave Address for write */
-  I2C_Send7bitAddress(I2C2, mt9v034_DEVICE_WRITE_ADDRESS, I2C_Direction_Transmitter);
-
-  /* Test on I2C2 EV6 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Send I2C2 location address LSB */
-  I2C_SendData(I2C2, (uint8_t)(Addr));
-
-  /* Test on I2C2 EV8 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Send Data */
-  I2C_SendData(I2C2, Data);
-
-  /* Test on I2C2 EV8 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Send I2C2 STOP Condition */
-  I2C_GenerateSTOP(I2C2, ENABLE);
-
-  /* If operation is OK, return 0 */
-  return 0;
-}
-
-/**
-  * @brief  Reads a byte from a specific Camera register
-  * @param  Addr: mt9v034 register address.
-  * @retval data read from the specific register or 0xFF if timeout condition
-  *         occured.
-  */
-uint8_t mt9v034_ReadReg(uint16_t Addr)
-{
-  uint32_t timeout = TIMEOUT_MAX;
-  uint8_t Data = 0;
-
-  /* Generate the Start Condition */
-  I2C_GENERATE_START(I2C2, ENABLE);
-
-  /* Test on I2C2 EV5 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_MODE_SELECT))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Send DCMI selcted device slave Address for write */
-  I2C_Send7bitAddress(I2C2, mt9v034_DEVICE_READ_ADDRESS, I2C_Direction_Transmitter);
-
-  /* Test on I2C2 EV6 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Send I2C2 location address LSB */
-  I2C_SendData(I2C2, (uint8_t)(Addr));
-
-  /* Test on I2C2 EV8 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Clear AF flag if arised */
-  I2C2->SR1 |= (uint16_t)0x0400;
-
-  /* Generate the Start Condition */
-  I2C_GENERATE_START(I2C2, ENABLE);
-
-  /* Test on I2C2 EV6 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_MODE_SELECT))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Send DCMI selcted device slave Address for write */
-  I2C_Send7bitAddress(I2C2, mt9v034_DEVICE_READ_ADDRESS, I2C_Direction_Receiver);
-
-  /* Test on I2C2 EV6 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Prepare an NACK for the next data received */
-  I2C_AcknowledgeConfig(I2C2, DISABLE);
-
-  /* Test on I2C2 EV7 and clear it */
-  timeout = TIMEOUT_MAX; /* Initialize timeout value */
-  while(!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_RECEIVED))
-  {
-    /* If the timeout delay is exeeded, exit with error code */
-    if ((timeout--) == 0) return 0xFF;
-  }
-
-  /* Prepare Stop after receiving data */
-  I2C_GenerateSTOP(I2C2, ENABLE);
-
-  /* Receive the Data */
-  Data = I2C_ReceiveData(I2C2);
-
-  /* return the read data */
-  return Data;
-}
-#endif

@@ -62,11 +62,18 @@
 #include "mt9v034.h"
 #include "dcmi.h"
 #include "usbd_cdc_if.h"
+#include "no_warnings.h"
+#include "mavlink_bridge_header.h"
+#include <mavlink.h>
+#include "settings.h"
+//#include "utils.h"
+#include "communication.h"
+//#include "debug.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+uint32_t usb_rx_length = 0;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -82,18 +89,141 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+typedef enum
+{
+	LED_ACT = 0,	// Blue
+	LED_COM = 1, 	// Amber
+	LED_ERR = 2,	// Red
+} Led_TypeDef;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+extern uint8_t dcmi_image_buffer_8bit_1[FULL_IMAGE_SIZE];
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* boot time in milliseconds ticks */
+volatile uint32_t boot_time_ms = 0;
+/* boot time in 10 microseconds ticks */
+volatile uint32_t boot_time10_us = 0;
+/* timer constants */
+#define NTIMERS         	9
+#define TIMER_CIN       	0
+#define TIMER_LED       	1
+#define TIMER_DELAY     	2
+#define TIMER_SONAR			3
+#define TIMER_SYSTEM_STATE	4
+#define TIMER_RECEIVE		5
+#define TIMER_PARAMS		6
+#define TIMER_IMAGE			7
+#define TIMER_LPOS		8
+#define MS_TIMER_COUNT		100 /* steps in 10 microseconds ticks */
+#define LED_TIMER_COUNT		500 /* steps in milliseconds ticks */
+#define SONAR_TIMER_COUNT 	100	/* steps in milliseconds ticks */
+#define SYSTEM_STATE_COUNT	1000/* steps in milliseconds ticks */
+#define PARAMS_COUNT		100	/* steps in milliseconds ticks */
+#define LPOS_TIMER_COUNT 	100	/* steps in milliseconds ticks */
+#define IMAGE_RATE_COUNT 30
+static volatile unsigned timer[NTIMERS];
+static volatile unsigned timer_ms = MS_TIMER_COUNT;
 
+/* timer/system booleans */
+bool send_system_state_now = true;
+bool receive_now = true;
+bool send_params_now = true;
+bool send_image_now = true;
+bool send_lpos_now = true;
+/**
+  * @brief  Increment boot_time_ms variable and decrement timer array.
+  * @param  None
+  * @retval None
+  */
+void timer_update_ms(void)
+{
+	boot_time_ms++;
+
+  /* each timer decrements every millisecond if > 0 */
+	for (unsigned i = 0; i < NTIMERS; i++)
+		if (timer[i] > 0)
+			timer[i]--;
+
+
+	if (timer[TIMER_LED] == 0)
+	{
+		/* blink activitiy */
+		//HAL_GPIO_TogglePin(GPIOE, LED_ACT_Pin);
+		HAL_GPIO_TogglePin(GPIOE, LED_COM_Pin);
+		timer[TIMER_LED] = LED_TIMER_COUNT;
+	}
+
+	if (timer[TIMER_SONAR] == 0)
+	{
+		//sonar_trigger();
+		timer[TIMER_SONAR] = SONAR_TIMER_COUNT;
+	}
+
+	if (timer[TIMER_SYSTEM_STATE] == 0)
+	{
+		send_system_state_now = true;
+		timer[TIMER_SYSTEM_STATE] = SYSTEM_STATE_COUNT;
+	}
+
+	if (timer[TIMER_RECEIVE] == 0)
+	{
+		receive_now = true;
+		timer[TIMER_RECEIVE] = SYSTEM_STATE_COUNT;
+	}
+
+	if (timer[TIMER_PARAMS] == 0)
+	{
+		send_params_now = true;
+		timer[TIMER_PARAMS] = PARAMS_COUNT;
+	}
+
+	if (timer[TIMER_IMAGE] == 0)
+	{
+		send_image_now = true;
+		timer[TIMER_IMAGE] = IMAGE_RATE_COUNT;
+	}
+
+	if (timer[TIMER_LPOS] == 0)
+	{
+		send_lpos_now = true;
+		timer[TIMER_LPOS] = LPOS_TIMER_COUNT;
+	}
+}
+
+/**
+  * @brief  Increment boot_time10_us variable and decrement millisecond timer, triggered by timer interrupt
+  * @param  None
+  * @retval None
+  */
+void timer_update(void)
+{
+	boot_time10_us++;
+
+	/*  decrements every 10 microseconds*/
+	timer_ms--;
+
+	if (timer_ms == 0)
+	{
+		timer_update_ms();
+		timer_ms = MS_TIMER_COUNT;
+	}
+
+}
+uint32_t get_boot_time_ms(void)
+{
+	return boot_time_ms;
+}
+
+uint32_t get_boot_time_us(void)
+{
+	return boot_time10_us*10;// *10 to return microseconds
+}
 /* USER CODE END 0 */
 
 /**
@@ -112,14 +242,24 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  //配置mavlink协议相关的东西
+  /* load settings and parameters */
+  	global_data_reset_param_defaults();
+  	/* init mavlink */
+  		communication_init();
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  /* init clock */
+  if (SysTick_Config(SystemCoreClock / 100000))/*set timer to trigger interrupt every 10 us */
+  	{
+  		/* capture clock error */
+  		HAL_GPIO_TogglePin(GPIOE, LED_ERR_Pin);
+  		while (1);
+  	}
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -146,15 +286,65 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  global_data.param[PARAM_IMAGE_WIDTH] = FULL_IMAGE_COLUMN_SIZE;
+  	global_data.param[PARAM_IMAGE_HEIGHT] = FULL_IMAGE_ROW_SIZE;
+  	uint16_t image_size = global_data.param[PARAM_IMAGE_WIDTH] * global_data.param[PARAM_IMAGE_HEIGHT];
   while (1)
   {
+#if 0
 	  CDC_Transmit_FS("hello", 5);
+	  CDC_Transmit_FS("world", 5);
 	  HAL_GPIO_TogglePin(GPIOE, LED_COM_Pin);
 	  HAL_Delay(100);
-    
+#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    /* receive commands */
+    //接收mavlink指令
+    if (receive_now)
+    {
+      /* test every second */
+      //communication_receive();
+      communication_receive_usb();
+      receive_now = false;
+    }
+    /*  transmit raw 8-bit image */
+    		/*send_image_now决定了帧率*/
+        //发送图像
+    		if (FLOAT_AS_BOOL(global_data.param[PARAM_USB_SEND_VIDEO])&& send_image_now)
+    		{
+
+    			/* get size of image to send */
+    			uint16_t image_size_send;
+    			uint16_t image_width_send;
+    			uint16_t image_height_send;
+
+    			image_size_send = image_size;
+    			image_width_send = global_data.param[PARAM_IMAGE_WIDTH];
+    			image_height_send = global_data.param[PARAM_IMAGE_HEIGHT];
+
+    			mavlink_msg_data_transmission_handshake_send(
+    					MAVLINK_COMM_2,
+    					MAVLINK_DATA_STREAM_IMG_RAW8U,
+    					image_size_send,
+    					image_width_send,
+    					image_height_send,
+    					image_size_send / MAVLINK_MSG_ENCAPSULATED_DATA_FIELD_DATA_LEN + 1,
+    					MAVLINK_MSG_ENCAPSULATED_DATA_FIELD_DATA_LEN,
+    					100);
+    			uint16_t frame = 0;
+    			for (frame = 0; frame < image_size_send / MAVLINK_MSG_ENCAPSULATED_DATA_FIELD_DATA_LEN + 1; frame++)
+    			{
+    				mavlink_msg_encapsulated_data_send(MAVLINK_COMM_2, frame, &((uint8_t *) dcmi_image_buffer_8bit_1)[frame * MAVLINK_MSG_ENCAPSULATED_DATA_FIELD_DATA_LEN]);
+    			}
+
+    			send_image_now = false;
+    		}
+    		else if (!FLOAT_AS_BOOL(global_data.param[PARAM_USB_SEND_VIDEO]))
+    		{
+    			//LEDOff(LED_COM);
+    		}
   }
   /* USER CODE END 3 */
 }

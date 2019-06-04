@@ -60,7 +60,11 @@
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-
+extern uint32_t usb_rx_length;
+#define APP_TX_BUF_SIZE 128
+uint8_t APP_Tx_Buffer[APP_TX_BUF_SIZE];
+uint32_t APP_tx_ptr_head;
+uint32_t APP_tx_ptr_tail;
 /* USER CODE END PV */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -293,6 +297,19 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   /* USER CODE BEGIN 6 */
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+  usb_rx_length += (*Len);
+  uint32_t i;
+  for (i = 0; i < *Len; i++)
+  {
+  		APP_Tx_Buffer[APP_tx_ptr_head] = *(Buf + i);
+  		APP_tx_ptr_head++;
+
+  		if(APP_tx_ptr_head == APP_TX_BUF_SIZE)
+  			APP_tx_ptr_head = 0;
+
+  		if(APP_tx_ptr_head == APP_tx_ptr_tail)
+  			return USBD_FAIL;
+  }
   return (USBD_OK);
   /* USER CODE END 6 */
 }
@@ -318,12 +335,75 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
   }
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
   result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+  while (hcdc->TxState != 0){
+      //return USBD_BUSY;
+    }
   /* USER CODE END 7 */
   return result;
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
+/**
+  * @brief  Get a char from the USB serial link receive buffer.
+  *
+  * @param  buf pointer to char array
+  * @retval 1 if char is available, 0 buffer empty
+  */
+uint8_t VCP_get_char(uint8_t *buf)
+{
+	if(APP_tx_ptr_head == APP_tx_ptr_tail)
+		return 0;
 
+	*buf = APP_Tx_Buffer[APP_tx_ptr_tail];
+	APP_tx_ptr_tail++;
+
+	if(APP_tx_ptr_tail == APP_TX_BUF_SIZE)
+		APP_tx_ptr_tail = 0;
+
+	return 1;
+}
+
+/**
+  * @brief  Get a full string from the USB serial link receive buffer.
+  *
+  * @param  buf address to store char array
+  * @retval 1 if char is available, 0 buffer empty
+  */
+uint8_t VCP_get_string(uint8_t *buf)
+{
+	if(APP_tx_ptr_head == APP_tx_ptr_tail)
+		return 0;
+
+	while(!APP_Tx_Buffer[APP_tx_ptr_tail] || APP_Tx_Buffer[APP_tx_ptr_tail] == '\n' || APP_Tx_Buffer[APP_tx_ptr_tail] == '\r')
+	{
+		APP_tx_ptr_tail++;
+		if(APP_tx_ptr_tail == APP_TX_BUF_SIZE)
+			APP_tx_ptr_tail = 0;
+		if(APP_tx_ptr_head == APP_tx_ptr_tail)
+			return 0;
+	}
+
+	int i=0;
+	do
+	{
+		*(buf+i) = APP_Tx_Buffer[i+APP_tx_ptr_tail];
+		i++;
+
+		if((APP_tx_ptr_tail+i) == APP_TX_BUF_SIZE)
+			i = -APP_tx_ptr_tail;
+		if(APP_tx_ptr_head == (APP_tx_ptr_tail+i))
+			return 0;
+	}
+	while(APP_Tx_Buffer[APP_tx_ptr_tail+i] && APP_Tx_Buffer[APP_tx_ptr_tail+i] != '\n' && APP_Tx_Buffer[APP_tx_ptr_tail+i] != '\r');
+
+	*(buf+i) = 0;
+	APP_tx_ptr_tail+= i;
+
+	if(APP_tx_ptr_tail >= APP_TX_BUF_SIZE)
+		APP_tx_ptr_tail -= APP_TX_BUF_SIZE;
+
+	return i;
+}
 /* USER CODE END PRIVATE_FUNCTIONS_IMPLEMENTATION */
 
 /**
