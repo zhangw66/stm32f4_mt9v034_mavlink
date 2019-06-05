@@ -271,7 +271,8 @@ int mt9v034_start_stream(void)
 
 	if (chip_version != 0x1324) {
 		CDC_Transmit_FS((uint8_t*)"read err\n", strlen("read err\n"));
-		while(1);
+		//while(1);
+		return -1;
 	}
 	CDC_Transmit_FS("[mt9v034]: ok\n", strlen("[mt9v034]: ok\n"));
 
