@@ -68,6 +68,7 @@
 #include "settings.h"
 //#include "utils.h"
 #include "communication.h"
+#include "i2c_gpio.h"
 //#include "debug.h"
 /* USER CODE END Includes */
 
@@ -250,11 +251,14 @@ int main(void)
   /* USER CODE END Init */
 
   /* Configure the system clock */
-  //SystemClock_Config();
-  SystemClock_Config_8_168Mhz();
+#if 0
+  SystemClock_Config();
+#else
+  		SystemClock_Config_8_168Mhz();
+#endif
   /* USER CODE BEGIN SysInit */
   /* init clock */
-  if (0/*SysTick_Config(SystemCoreClock / 100000)*/)/*set timer to trigger interrupt every 10 us */
+  if (SysTick_Config(SystemCoreClock / 100000))/*set timer to trigger interrupt every 10 us */
   	{
   		/* capture clock error */
   		HAL_GPIO_TogglePin(GPIOE, LED_ERR_Pin);
@@ -268,7 +272,11 @@ int main(void)
   MX_TIM3_Init();
   MX_USB_DEVICE_Init();
   MX_DCMI_Init();
+#if !(I2C_GPIO_ENABLE)
   MX_I2C2_Init();
+#else
+  i2c_gpio_init();
+#endif
   /* USER CODE BEGIN 2 */
   //开启时钟输出
   if (HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3) != HAL_OK)
@@ -277,10 +285,10 @@ int main(void)
     Error_Handler();
   }
   //通过i2c配置mt9v034的工作模式
-  while (1) {
+  //while (1) {
   mt9v034_start_stream();
-  HAL_Delay(100);
-  }
+  //HAL_Delay(100);
+  //}
   //配置dcmi
   //reset_mt9v034_by_hardware();
   //开启dcmi的dma传输

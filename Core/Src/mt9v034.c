@@ -36,6 +36,7 @@
  ****************************************************************************/
 #include <string.h>
 #include "mt9v034.h"
+#include "main.h"
 //#include "i2c_gpio.h"
 	struct mt9v034_reg {
 	uint8_t addr;
@@ -249,8 +250,10 @@ static int mt9v034_write_table(		const struct mt9v034_reg table[])
 
 		err = mt9v034_WriteReg16(next->addr, val);
 
-		if (err < 0)
+		if (err != 0) {
+			while(1);
 			break;
+		}
 	}
 
 	return err;
@@ -511,8 +514,11 @@ static uint16_t mt9v034_ReadReg16(uint8_t address)
 {
 	uint8_t tmp[2];
 	HAL_StatusTypeDef ret;
+#if I2C_GPIO_ENABLE
+	i2c_master_read_mem(mt9v034_DEVICE_WRITE_ADDRESS, address, tmp, 2);
+#else
 	ret = HAL_I2C_Mem_Read(&hi2c2, mt9v034_DEVICE_WRITE_ADDRESS, address, I2C_MEMADD_SIZE_8BIT, tmp, 2, 1000);
-	
+#endif
 	return tmp[0] << 8 | tmp[1];
 }
 
@@ -525,8 +531,12 @@ static uint8_t mt9v034_WriteReg16(uint16_t address, uint16_t Data)
 	int8_t ret;
 	tmp[0] = address;
 	tmp[1] = Data >> 8;
-	tmp[2] = Data; 
+	tmp[2] = Data;
+#if I2C_GPIO_ENABLE
+	i2c_master_transmit(mt9v034_DEVICE_WRITE_ADDRESS, tmp, 3);
+#else
 	ret = HAL_I2C_Master_Transmit(&hi2c2, mt9v034_DEVICE_WRITE_ADDRESS, tmp, 3, 100);
+#endif
 	return ret;
 }
 

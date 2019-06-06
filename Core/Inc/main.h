@@ -106,7 +106,7 @@ void Error_Handler(void);
 #define MONO_CLK_Pin GPIO_PIN_8
 #define MONO_CLK_GPIO_Port GPIOC
 /* USER CODE BEGIN Private defines */
-
+#define I2C_GPIO_ENABLE 0
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
